@@ -1,253 +1,535 @@
 # Alpha Fitness — Technical SEO Audit Remediation Guide
+### Senior-reviewed fix playbook for junior developers
 
-**Site:** [myalphafitness.ca](https://myalphafitness.ca)  
-**Original crawl:** September 4, 2026  
-**Rechecked:** September 10, 2026  
-**Audience:** Junior developer + content/SEO support  
-**Purpose:** Fix every issue from the audit with clear steps, verification, and ownership
+| | |
+|---|---|
+| **Site** | [myalphafitness.ca](https://myalphafitness.ca) |
+| **Original audit crawl** | September 4, 2026 (Screaming Frog) |
+| **Senior recheck** | September 10, 2026 (live site + curl verification) |
+| **Reviewed by** | Senior Developer / Tech Lead |
+| **Assigned to** | Junior Developer (+ SEO/Content for copy tasks) |
+| **Stack (confirmed)** | PHP on LiteSpeed, shared `<head>` SEO block, JSON-LD in templates |
+
+---
+
+## Senior review — executive summary
+
+This audit is **mostly accurate**, but the live site has improved since the crawl. Treat the original “0 structured data” finding as **outdated** — schema exists on several templates already. Focus effort on what is **still broken or inconsistent**.
+
+### What the junior dev must fix first (this week)
+
+| Order | ID | Issue | Why senior prioritizes it |
+|---|---|---|---|
+| 1 | SEO-004 | `fr/gear.php` → 404 | Live bug. FR nav links to `gear.php` which resolves to `/fr/gear.php`. French `/fr/equipement.php` already exists (200 OK). |
+| 2 | SEO-002 | Meta keywords on 130 pages | One template delete = 107 pages fixed. Zero SEO value, signals neglect. |
+| 3 | SEO-008 | News tag canonicals wrong | Tag pages currently canonicalise to **themselves** (`news.php?tag=…`), not `/news.php`. Actively creates duplicates. |
+| 4 | SEO-007 | Duplicate titles/metas | Quick copy fixes on 2 residential pages + 7 facility pages. |
+| 5 | SEO-001 | Finish schema rollout | Partially done — extend pattern already in codebase, don’t rebuild from scratch. |
+
+### Senior recheck — corrected status
+
+| Audit finding | Sep 4 report | Sep 10 live recheck | Still action needed? |
+|---|---|---|---|
+| Structured data | 0 pages | **Partially fixed** — LocalBusiness/WebSite/Service on homepage; BlogPosting+FAQPage+BreadcrumbList on blog; Article on service pages | **Yes** — extend to all templates + validate |
+| Meta keywords | 130 pages | **Still open** | **Yes** |
+| Duplicate H1 | 86 pages | **Still open** — mostly template/category pages sharing generic H1s | **Yes** |
+| Broken `fr/gear.php` | 404 | **Still 404** — root cause: FR nav uses `href="gear.php"` | **Yes — urgent** |
+| Titles >60 chars | 70 pages | **Still open** | **Yes** (content) |
+| Meta desc >155 chars | 61 pages | **Still open** | **Yes** (content) |
+| Duplicate titles | 4 groups | **Still open** | **Yes** |
+| Unsafe cross-origin links | 57 | **Partially fixed** — LinkedIn links on `about.php` still missing `noopener` | **Yes** |
+| Hreflang gaps | 3 pages | Not re-crawled | **Yes** (low priority) |
+| Images >100KB | 70 | Not re-measured | **Yes** (maintenance) |
+
+### New findings from senior recheck (not in original audit)
+
+| Issue | URL | Action |
+|---|---|---|
+| FR nav broken gear link | `/fr/` pages link to `gear.php` → `/fr/gear.php` (404) | Redirect **or** fix nav to `equipement.php` |
+| News tag self-canonical | `news.php?tag=gym-design` canonical = itself | Change canonical to `/news.php` |
+| Duplicate FAQ in schema | Blog sample has same question twice in FAQPage JSON-LD | Deduplicate when generating FAQ schema |
+| Underscore URLs return 404 | `commercial_boutiques.php`, `corporate_wellness.php`, `hospitality_wellness.php` | Audit internal links; add 301 to correct pages if linked |
 
 ---
 
 ## How to use this document
 
-1. Work **top to bottom by priority** (Critical → High → Medium → Low).
-2. Mark each task **Done** only after completing the **Verification** step.
-3. Content tasks (titles, descriptions, H1 copy) need SEO/content approval before deploy.
-4. Do **not** change existing URL slugs unless explicitly noted — use redirects if a URL must change.
+1. Open **`alpha-fitness-seo-audit-tracker.csv`** in Google Sheets for day-to-day tracking.
+2. Fix tasks **in priority order** (Critical → High → Medium → Low).
+3. Mark **Done** only when **Verification** steps pass.
+4. Content changes (titles, H1s, descriptions) need SEO approval before deploy.
+5. **Never change live URL slugs** without a 301 redirect plan.
+
+### Definition of done (senior standard)
+
+A task is complete only when **all** of the following are true:
+
+- [ ] Code/content change is deployed to production
+- [ ] Verification command or tool passes (listed per task)
+- [ ] No regression on EN **and** FR version of the page
+- [ ] PR/commit link recorded in tracker
+- [ ] Senior or SEO has spot-checked at least 1 sample URL
 
 ---
 
-## Recheck summary (September 10, 2026)
+## Codebase map (where to look)
 
-| Finding (original audit) | Original status | Recheck status | Action still needed? |
-|---|---|---|---|
-| Zero structured data sitewide | Critical | **Partially fixed** — LocalBusiness, WebSite, Service on homepage; BlogPosting + FAQPage + BreadcrumbList on blog posts; Article + BreadcrumbList on service pages | **Yes** — roll out to all page types; validate in Rich Results Test |
-| 130 pages with meta keywords | High | **Still open** — meta keywords present on homepage, about, blog, etc. | **Yes** — remove from template |
-| 86 duplicate H1 tags | High | **Still open** — generic/section H1s still used on multiple templates | **Yes** |
-| `fr/gear.php` 404 error | High | **Still open** — returns HTTP 404 | **Yes** — fix or 301 redirect |
-| 70 titles over 60 characters | Medium | **Still open** | **Yes** — content rewrite |
-| 61 meta descriptions over 155 chars | Medium | **Still open** | **Yes** — content rewrite |
-| 4 duplicate page titles | Medium | **Still open** — e.g. both residential gym pages share title | **Yes** |
-| 57 unsafe cross-origin links | Low | **Partially fixed** — some links have `noopener`; LinkedIn team links still missing it | **Yes** — template fix |
-| 3 hreflang missing return links | Low | Not re-verified page-by-page | **Yes** — low priority cleanup |
-| 70 images over 100KB | Low | Not re-measured | **Yes** — scheduled maintenance |
-| 7 URLs with underscores | Low | Informational only | **No change to existing URLs** |
+The site is PHP. Based on live HTML, SEO is managed in a shared head block:
+
+```html
+<!-- SEO: Canonical, hreflang, OG, Twitter -->
+```
+
+**Search these first in the repo:**
+
+```bash
+grep -r 'meta name="keywords"' --include="*.php" .
+grep -r 'application/ld+json' --include="*.php" .
+grep -r 'hreflang' --include="*.php" .
+grep -r 'pageTitle\|page_title\|\$title' --include="*.php" .
+grep -r 'gear.php' --include="*.php" .
+```
+
+**Expected file locations (names may vary):**
+
+| Purpose | Likely files |
+|---|---|
+| Shared `<head>` / SEO | `includes/head.php`, `includes/seo.php`, `header.php`, `partials/meta.php` |
+| JSON-LD schema | Same as above, or `includes/schema.php` |
+| FR navigation | `fr/includes/header.php`, shared nav partial |
+| News / blog | `news.php`, `blog-article.php`, `fr/nouvelles.php` |
+| Redirects | `.htaccess` (LiteSpeed/Apache) |
 
 ---
 
-## Master issue tracker
+## Master tracker
 
 | ID | Priority | Issue | Owner | Effort | Phase |
 |---|---|---|---|---|---|
-| SEO-001 | Critical | Complete structured data rollout (FAQ, Service, BreadcrumbList on all relevant pages) | Developer | 6–8 hrs | Week 2 |
-| SEO-002 | High | Remove meta keywords from all pages | Developer | 1 hr | Week 1 |
+| SEO-001 | Critical | Complete structured data rollout | Developer | 6–8 hrs | Week 2 |
+| SEO-002 | High | Remove meta keywords (130 pages) | Developer | 1 hr | Week 1 |
 | SEO-003 | High | Fix duplicate H1 tags (86 pages) | Dev + SEO | 1 day | Week 2–3 |
-| SEO-004 | High | Fix or redirect broken `fr/gear.php` | Developer | 30 min | Week 1 |
-| SEO-005 | Medium | Shorten page titles to 50–60 characters | SEO/Content | 4–6 hrs | Week 2 |
-| SEO-006 | Medium | Shorten meta descriptions to 120–155 characters | SEO/Content | 3–4 hrs | Week 2 |
-| SEO-007 | Medium | Resolve duplicate titles & meta descriptions | SEO/Content + Dev | 3 hrs | Week 1–2 |
-| SEO-008 | Medium | Canonicalise news tag/filter URLs | Developer | 30 min | Week 1 |
-| SEO-009 | Low | Add `rel="noopener noreferrer"` to external `target="_blank"` links | Developer | 1 hr | Week 3 |
-| SEO-010 | Low | Fix 3 hreflang missing return/self links | Developer | 30 min | Week 3 |
-| SEO-011 | Low | Compress images >100KB; add width/height where missing | Developer | 4–6 hrs | Quarter |
-| SEO-012 | Low | Use hyphens in **new** URLs only | Developer | Ongoing | Ongoing |
+| SEO-004 | High | Fix broken `fr/gear.php` | Developer | 30 min | Week 1 |
+| SEO-005 | Medium | Shorten page titles (50–60 chars) | SEO/Content | 4–6 hrs | Week 2 |
+| SEO-006 | Medium | Shorten meta descriptions (120–155 chars) | SEO/Content | 3–4 hrs | Week 2 |
+| SEO-007 | Medium | Resolve duplicate titles & metas | Dev + SEO | 3 hrs | Week 1–2 |
+| SEO-008 | Medium | Fix news tag canonicals | Developer | 30 min | Week 1 |
+| SEO-009 | Low | Add `rel="noopener noreferrer"` | Developer | 1 hr | Week 3 |
+| SEO-010 | Low | Fix hreflang return links (3 pages) | Developer | 30 min | Week 3 |
+| SEO-011 | Low | Compress images; add dimensions | Developer | 4–6 hrs | Quarter |
+| SEO-012 | Low | Hyphens on new URLs only | Developer | Ongoing | Ongoing |
 
 ---
 
-## Detailed fix instructions
+# Detailed fixes (senior-reviewed)
 
 ---
 
-### SEO-001 — Structured data (schema markup)
+## SEO-004 — Broken French gear page (FIX FIRST)
 
-**Original audit:** 0 pages with schema  
-**Recheck:** Homepage and several templates already output JSON-LD. Blog posts include `BlogPosting`, `FAQPage`, and `BreadcrumbList`. Service pages include `Article` and `BreadcrumbList`. **Gap:** not consistent on every page type (facilities, gear, news listing, French equivalents).
+| | |
+|---|---|
+| **Priority** | High — live user-facing bug |
+| **Senior review** | This is not a content issue. `/fr/equipement.php` works (200). `/fr/gear.php` does not. FR header/nav still links to `gear.php`, which resolves relative to `/fr/gear.php`. Fix navigation **and** add redirect as safety net. |
+| **Risk if ignored** | French users hit 404 from main nav; wasted crawl budget; broken hreflang equity |
 
-#### Why it matters
-Schema helps Google show rich results (FAQ accordions, breadcrumbs, local business panel).
+### Root cause
+FR templates use `href="gear.php"` instead of `href="equipement.php"`.
 
-#### Solution steps
+### How to fix
 
-**Step 1 — Audit current schema output**
+**Step 1 — Confirm live state**
 ```bash
-# Run on any page URL
-curl -s "https://myalphafitness.ca/PAGE.php" | grep -A2 'application/ld+json'
+curl -I https://myalphafitness.ca/fr/gear.php        # expect 404 today
+curl -I https://myalphafitness.ca/fr/equipement.php  # expect 200
+curl -s https://myalphafitness.ca/fr/ | grep gear    # find bad links
 ```
-List which `@type` values appear per template (homepage, service, facility, blog, news index, gear, French mirror).
 
-**Step 2 — Centralize JSON-LD in one include file**
-- Create or extend something like `includes/schema.php` (or the existing SEO partial referenced in HTML comments: `<!-- SEO: Canonical, hreflang, OG, Twitter -->`).
-- Output one `<script type="application/ld+json">` block per page using `@graph` (same pattern already used on homepage).
+**Step 2 — Fix navigation (primary fix)**
 
-**Step 3 — Homepage (verify/enhance LocalBusiness)**
-Ensure homepage JSON-LD includes:
-- `@type`: `["Organization", "LocalBusiness"]`
-- `name`, `url`, `logo`, `image`, `telephone`, `email`
-- Full `PostalAddress` (Mascouche, QC)
-- `geo`, `sameAs` (social profiles), `areaServed`, `priceRange`
+In the FR header/nav partial, replace every gear link:
+```html
+<!-- BEFORE -->
+<a href="gear.php">...</a>
 
-**Step 4 — Service pages (6 pages)**
-Add `Service` schema on:
-- `commercial-gym-design.php`
-- `corporate-gym-design.php`
-- `boutique-gym-design.php`
-- `hotel-condo-gym-design.php`
-- `athletic-facility-design.php`
-- French equivalents under `/fr/`
+<!-- AFTER -->
+<a href="equipement.php">...</a>
+```
 
-Example fields: `serviceType`, `provider` (link to `#organization`), `areaServed`, `description`.
+Search entire repo:
+```bash
+grep -rn 'href="gear.php"' fr/
+grep -rn "href='gear.php'" fr/
+```
 
-**Step 5 — Blog posts (23 articles)**
-For each article template (`blog-article.php` / French equivalent):
-- Keep `BlogPosting` (or `Article`) with `headline`, `datePublished`, `dateModified`, `author`, `publisher`, `image`, `description`.
-- Add `FAQPage` **only when the page has a visible FAQ section** — map each question/answer from the HTML into `mainEntity`.
-- Add `BreadcrumbList`: Home → News → Article title.
+**Step 3 — Add 301 redirect (safety net)**
 
-**Step 6 — Facility pages**
-Add `BreadcrumbList` on all facility case-study pages. Optionally use `@type: WebPage` with `about` describing the installation.
+In `.htaccess`:
+```apache
+# Redirect legacy FR gear URL to correct French page
+Redirect 301 /fr/gear.php https://myalphafitness.ca/fr/equipement.php
+```
 
-**Step 7 — Validate**
-1. [Google Rich Results Test](https://search.google.com/test/rich-results) — test homepage, 1 service page, 1 facility page, 1 blog post (EN + FR).
-2. Fix any errors (duplicate questions in FAQ, missing required fields, invalid dates).
+**Step 4 — Update hreflang** (if `fr/gear.php` was listed anywhere)
 
-#### Verification checklist
-- [ ] Rich Results Test passes on 5 sample URLs (EN + FR)
-- [ ] FAQ schema only on pages with visible FAQ content
-- [ ] No duplicate/conflicting JSON-LD blocks with invalid JSON
+Ensure gear/equipement EN/FR pair is:
+```html
+<link rel="alternate" hreflang="en-CA" href="https://myalphafitness.ca/gear.php">
+<link rel="alternate" hreflang="fr-CA" href="https://myalphafitness.ca/fr/equipement.php">
+```
+
+### Do NOT
+- Leave a 404 in place
+- Redirect to English `/gear.php` (bad UX for French users)
+- Create duplicate gear pages in both FR URLs
+
+### Verification
+```bash
+curl -I https://myalphafitness.ca/fr/gear.php   # must be 301 → equipement.php
+curl -s https://myalphafitness.ca/fr/ | grep 'gear.php'  # must return nothing
+```
+- [ ] FR nav “Gear/Équipement” opens `/fr/equipement.php`
+- [ ] Screaming Frog: 0 client errors for gear URLs
 
 ---
 
-### SEO-002 — Remove meta keywords (130 pages)
+## SEO-002 — Remove meta keywords (130 pages)
 
-**Recheck:** Confirmed still present — 441-character boilerplate block on most pages.
+| | |
+|---|---|
+| **Priority** | High — one template fix clears ~107 pages |
+| **Senior review** | Easiest high-impact win. Google ignores this tag since 2009. Delete it everywhere; do not replace with anything. |
+| **Risk if ignored** | Page bloat, looks outdated to partners/competitors reviewing source |
 
-#### Why it matters
-Google ignores meta keywords since 2009. They add dead weight and look outdated.
+### How to fix
 
-#### Solution steps
-
-**Step 1 — Find the template source**
-Search the codebase:
+**Step 1 — Find all occurrences**
 ```bash
-grep -r 'meta name="keywords"' --include="*.php" .
+grep -rn 'meta name="keywords"' --include="*.php" .
 ```
-Expected location: shared `<head>` partial (header include used by all PHP pages).
 
-**Step 2 — Remove the tag from the template**
-Delete the entire line:
+**Step 2 — Remove from shared template**
+
+Delete this entire line from the shared head/SEO partial:
 ```html
 <meta name="keywords" content="..." />
 ```
 
 **Step 3 — Remove page-level overrides**
-Facility pages with custom keyword blocks (e.g. Treana, Liveo Mascouche) — remove those individual tags too.
 
-**Step 4 — Deploy and spot-check**
+Some facility pages have custom keyword blocks (Treana, Liveo Mascouche, service pages). Remove each one individually.
+
+**Step 4 — Deploy and verify**
 ```bash
-curl -s "https://myalphafitness.ca/about.php" | grep 'meta name="keywords"'
-# Should return nothing
+curl -s https://myalphafitness.ca/about.php | grep 'meta name="keywords"'
+curl -s https://myalphafitness.ca/fr/a-propos.php | grep 'meta name="keywords"'
+# Both must return empty
 ```
 
-#### Verification checklist
-- [ ] Screaming Frog re-crawl shows **0** pages with meta keywords
-- [ ] Spot-check 5 EN + 5 FR pages
+### Do NOT
+- Replace meta keywords with another hidden keyword block
+- Only remove from English — FR pages must be cleaned too
+
+### Verification
+- [ ] `grep -r 'meta name="keywords"'` returns 0 results in codebase
+- [ ] Screaming Frog: Meta Keywords = 0 pages
 
 ---
 
-### SEO-003 — Duplicate H1 tags (86 pages)
+## SEO-008 — News tag pages: wrong canonical
 
-**Recheck:** Pages have an H1, but many share generic text (e.g. section labels like "OUR SERVICES" reused across templates).
+| | |
+|---|---|
+| **Priority** | Medium — actively causing duplicate titles |
+| **Senior review** | Live check shows `news.php?tag=gym-design` has `canonical` pointing to **itself**, not `/news.php`. This is worse than having no canonical. Must fix in PHP logic. |
+| **Risk if ignored** | Google indexes multiple news URLs with identical titles |
 
-#### Why it matters
-H1 is the primary on-page topic signal. Duplicate H1s make pages look like duplicates to Google.
+### How to fix
 
-#### Solution steps
-
-**Step 1 — Export duplicate H1 report from Screaming Frog**
-Filter: HTML → H1 → sort by H1 text → find values used on more than one URL.
-
-**Step 2 — Fix template-level duplicates (developer)**
-- Ensure each page template pulls H1 from a **page-specific variable**, not a shared section heading.
-- Example pattern in PHP:
-```php
-<h1><?= htmlspecialchars($pageH1) ?></h1>
+**Step 1 — Confirm bug**
+```bash
+curl -s "https://myalphafitness.ca/news.php?tag=gym-design" | grep canonical
+# Currently wrong: href="...news.php?tag=gym-design"
 ```
-- Set `$pageH1` per page file or from CMS/database.
 
-**Step 3 — Write unique H1 copy (SEO/content)**
-Rules:
-- Exactly **one** H1 per page
-- Unique across the site
-- Contains primary keyword naturally
-- Does not need to match `<title>` exactly
+**Step 2 — Fix canonical logic in `news.php`**
+
+When a `tag` query parameter is present, force canonical to main news page:
+```php
+<?php
+$canonicalUrl = 'https://myalphafitness.ca/news.php';
+
+if (!empty($_GET['tag'])) {
+    // Filter/tag view — canonical to main news index
+    $canonicalUrl = 'https://myalphafitness.ca/news.php';
+    // Optional: prevent indexing of filter views
+    $robotsMeta = 'noindex, follow';
+} else {
+    $robotsMeta = 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
+}
+?>
+
+<link rel="canonical" href="<?= htmlspecialchars($canonicalUrl) ?>">
+<meta name="robots" content="<?= htmlspecialchars($robotsMeta) ?>">
+```
+
+Mirror the same logic in `fr/nouvelles.php`.
+
+**Step 3 — Keep tag links in UI** — users can still filter; SEO duplication is handled by canonical.
+
+### Do NOT
+- Canonicalise tag pages to themselves
+- Remove tag functionality from the UI
+
+### Verification
+```bash
+curl -s "https://myalphafitness.ca/news.php?tag=gym-design" | grep canonical
+# Must show: href="https://myalphafitness.ca/news.php"
+```
+- [ ] All 3 tag URLs canonical → `/news.php`
+- [ ] Screaming Frog duplicate titles for news tags = 0
+
+---
+
+## SEO-001 — Structured data (complete rollout)
+
+| | |
+|---|---|
+| **Priority** | Critical — but partially done; extend existing pattern |
+| **Senior review** | Do not rebuild schema from zero. Copy the working `@graph` JSON-LD pattern from homepage/blog. Gaps: facility pages, FR mirrors, consistent FAQ on all blog posts. Also fix duplicate FAQ questions in JSON-LD. |
+| **Risk if ignored** | Missed rich results (FAQ snippets, breadcrumbs, local panel) |
+
+### Current live coverage (Sep 10)
+
+| Page type | Schema present | Gap |
+|---|---|---|
+| Homepage | LocalBusiness, Organization, WebSite, Service | Verify only |
+| Blog posts | BlogPosting, FAQPage, BreadcrumbList | Confirm all 23 posts; dedupe FAQ |
+| Service pages | Article, BreadcrumbList | Add `Service` type |
+| Facility pages | Organization graph only | Add BreadcrumbList + WebPage |
+| News index | Organization graph only | Optional CollectionPage (already on facilities.php) |
+
+### How to fix
+
+**Step 1 — Audit templates**
+```bash
+curl -s "https://myalphafitness.ca/facilities-espacew.php" | grep '@type'
+curl -s "https://myalphafitness.ca/blog-article.php?slug=..." | grep '@type'
+```
+
+**Step 2 — Centralize in `includes/schema.php`**
+
+Create helper functions:
+```php
+function schemaOrganizationGraph(): array { /* existing homepage graph */ }
+
+function schemaBreadcrumbs(array $items): array {
+    return [
+        '@type' => 'BreadcrumbList',
+        'itemListElement' => array_map(fn($i, $item) => [
+            '@type' => 'ListItem',
+            'position' => $i + 1,
+            'name' => $item['name'],
+            'item' => $item['url'],
+        ], array_keys($items), $items),
+    ];
+}
+
+function schemaFAQFromDom(string $html): ?array {
+    // Parse visible FAQ Q&A from page — only output if section exists
+    // IMPORTANT: deduplicate questions (trim whitespace, compare case-insensitive)
+}
+```
+
+**Step 3 — Output one JSON-LD block per page**
+```php
+<script type="application/ld+json">
+<?= json_encode([
+    '@context' => 'https://schema.org',
+    '@graph' => array_filter([
+        ...schemaOrganizationGraph(),
+        $pageSchema,        // BlogPosting | Service | WebPage
+        $breadcrumbSchema,  // when not homepage
+        $faqSchema,         // only when FAQ section exists on page
+    ]),
+], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) ?>
+</script>
+```
+
+**Step 4 — Service pages — add Service schema**
+
+On each of the 6 service pages (EN + FR):
+```json
+{
+  "@type": "Service",
+  "name": "Commercial Gym Design",
+  "serviceType": "Commercial Gym Design and Equipment",
+  "provider": {"@id": "https://myalphafitness.ca/#organization"},
+  "areaServed": {"@type": "Country", "name": "Canada"},
+  "description": "..."
+}
+```
+
+**Step 5 — Facility pages — minimum BreadcrumbList**
+
+Example for `facilities-espacew.php`:
+```
+Home → Facilities → Espace W
+```
+
+**Step 6 — Fix FAQ duplicate bug**
+
+Live blog post repeats *“How do I know when commercial gym equipment needs replacing?”* twice. When building FAQ schema:
+```php
+$seen = [];
+foreach ($questions as $q) {
+    $key = strtolower(trim($q['name']));
+    if (isset($seen[$key])) continue;
+    $seen[$key] = true;
+    $mainEntity[] = $q;
+}
+```
+
+**Step 7 — Validate**
+- [Google Rich Results Test](https://search.google.com/test/rich-results) on 5 URLs (EN + FR)
+- Fix all errors before closing task
+
+### Do NOT
+- Add FAQ schema on pages without visible FAQ content (Google manual action risk)
+- Output invalid JSON (unescaped quotes in answers)
+- Duplicate the entire Organization block differently on every page — use `@id` references
+
+### Verification
+- [ ] Rich Results Test passes: homepage, 1 service, 1 facility, 1 blog (EN + FR)
+- [ ] FAQ schema question count matches visible FAQ count on page
+- [ ] No duplicate questions in JSON-LD
+
+---
+
+## SEO-003 — Duplicate H1 tags (86 pages)
+
+| | |
+|---|---|
+| **Priority** | High |
+| **Senior review** | Pages have *an* H1, but many category/listing templates reuse the same H1 (e.g. shared section labels). Service landing pages already have good unique H1s. Focus on category templates, FR mirrors, and news tag views. |
+| **Risk if ignored** | Google cannot distinguish page topics; weaker rankings |
+
+### Rules
+- Exactly **one** `<h1>` per page
+- H1 must be **unique sitewide** (EN and FR are separate pages — both need unique text)
+- H1 should contain the **primary keyword** but does not need to match `<title>` exactly
+- Section labels like “OUR SERVICES” must be `<h2>`, not `<h1>`
+
+### How to fix
+
+**Step 1 — Export duplicates from Screaming Frog**
+
+Filter: HTML → H1 → sort by H1 text → export URLs where count > 1.
+
+**Step 2 — Fix template architecture**
+
+Each page file (or CMS record) must set its own H1:
+```php
+// At top of facilities-espacew.php
+$pageH1 = 'Espace W Condo Gym Design — Mascouche';
+
+// In template — ONLY one h1 tag
+<h1><?= htmlspecialchars($pageH1, ENT_QUOTES, 'UTF-8') ?></h1>
+```
+
+**Step 3 — Demote shared headings**
+
+If a section heading is reused across pages, change it:
+```html
+<!-- BEFORE (wrong — duplicated as H1 on many pages) -->
+<h1>OUR SERVICES</h1>
+
+<!-- AFTER -->
+<h2>Our Services</h2>
+```
+
+**Step 4 — SEO writes copy for each URL**
 
 | Page type | Good H1 example |
 |---|---|
 | Commercial gym design | Commercial Gym Design in Quebec and Canada |
-| Facility (Carabins) | Carabins UdeM High-Performance Athletic Centre |
+| Facility case study | Carabins UdeM High-Performance Athletic Centre |
 | Blog post | Commercial Gym Equipment Cost in Canada: 2026 Budget Guide |
-| Corporate gym | Corporate Gym Design for Canadian Workplaces |
+| Category listing | Education & Sports Institution Gym Projects |
 
-**Step 4 — Fix common offenders first**
-- Service landing pages using shared section H1
-- Facility pages using brand-only H1
-- News tag pages using same H1 as main news page
+**Step 5 — Fix news tag pages**
 
-#### Verification checklist
-- [ ] Screaming Frog: no H1 text appears on more than 1 URL (except intentional EN/FR pairs — those should still differ by language)
-- [ ] Manual view-source: exactly one `<h1>` per page
+Tag views should not reuse the main news H1. Either:
+- Use canonical + noindex (SEO-008), **or**
+- Set H1 to `News: Gym Design` (unique per tag)
+
+### Do NOT
+- Hide duplicate H1s with CSS
+- Use multiple H1 tags for styling
+- Copy the same H1 across EN/FR without translating
+
+### Verification
+- [ ] Screaming Frog: each H1 text appears on only 1 URL per language
+- [ ] View source: exactly one `<h1>` per page
 
 ---
 
-### SEO-004 — Broken French page: `fr/gear.php`
+## SEO-007 — Duplicate titles & meta descriptions
 
-**Recheck:** Confirmed **HTTP 404** (September 10, 2026).
+| | |
+|---|---|
+| **Priority** | Medium |
+| **Senior review** | Confirmed live: `residential-gym-ac.php` and `residential-gym-sf.php` share the same title. Seven facility pages share a generic meta description; `facilities-espacew.php` even references the wrong facility (“Vita Sport”). |
 
-#### Solution steps (choose one)
+### Duplicate titles to fix
 
-**Option A — Restore the page (preferred if FR gear content should exist)**
-1. Copy structure from `gear.php` (English).
-2. Create `fr/gear.php` with translated content, title, meta description, H1, and hreflang tags.
-3. Ensure internal FR navigation links to the live page.
+| Current duplicate title | URLs | New title (suggested) |
+|---|---|---|
+| Residential Gym - A Complete Training Environment | `residential-gym-ac.php` | AC Residential Gym Design \| Alpha Fitness |
+| Same | `residential-gym-sf.php` | SF Garage Gym Design \| Alpha Fitness |
+| Stay Updated on the Latest… | `news.php`, `news.php?tag=*` | Fix via SEO-008 canonical |
+| Alpha Fitness - Creating Custom Gyms… | `about.php`, 2 FR facility pages | Unique FR facility titles per project |
 
-**Option B — 301 redirect to English gear page**
-In `.htaccess` (LiteSpeed/Apache):
-```apache
-Redirect 301 /fr/gear.php https://myalphafitness.ca/fr/equipement.php
-```
-Use the correct French gear URL if one exists — verify before redirecting.
+### Duplicate meta descriptions — 7 facility pages
 
-Or in PHP at top of a stub file:
+Affected: `facilities-espacew`, `facilities-vita-sport`, `facilities-apte`, `facilities-erco`, `facilities-vi-mascouche`, `facilities-progym`, `facilities-privilege-gym`
+
+**How to fix in code:**
+
+Each facility PHP file (or CMS entry) should set its own meta:
 ```php
-header('Location: https://myalphafitness.ca/gear.php', true, 301);
-exit;
+$pageTitle = 'Espace W Gym Design and Layout';
+$metaDescription = 'See how Alpha Fitness designed a compact condo gym for Espace W — layout, equipment selection, and premium finishes.';
 ```
 
-**Option C — Redirect to French homepage section**
-Only if no FR gear page is planned — still use **301**, never leave 404.
+**Template pattern:**
+```php
+<meta name="description" content="<?= htmlspecialchars($metaDescription, ENT_QUOTES, 'UTF-8') ?>">
+```
 
-#### Verification checklist
-- [ ] `curl -I https://myalphafitness.ca/fr/gear.php` returns **200** or **301** (not 404)
-- [ ] No internal links point to a 404
-- [ ] hreflang pair updated if URL changed
+### Verification
+- [ ] Screaming Frog: Duplicate Titles = 0
+- [ ] Screaming Frog: Duplicate Meta Descriptions = 0
+- [ ] `facilities-espacew.php` description mentions “Espace W”, not “Vita Sport”
 
 ---
 
-### SEO-005 — Page titles over 60 characters (70 pages)
+## SEO-005 — Page titles over 60 characters
 
-#### Rules
-- Target length: **50–60 characters** (Google truncates longer titles)
-- Include primary keyword near the start
-- Append `| Alpha Fitness` only if it fits
-- Every page needs a **unique** title
+| | |
+|---|---|
+| **Priority** | Medium (content task) |
+| **Senior review** | 44% of titles too long. Developer implements; SEO/content writes copy. Use a character counter before deploy. |
 
-#### Solution steps
+### Rules
+- Target: **50–60 characters**
+- Primary keyword near the start
+- `| Alpha Fitness` suffix only if it fits
+- Must be unique per URL
 
-**Step 1 — Export the title report** (Section 4 of original audit lists worst EN offenders).
+### Priority EN rewrites (from audit)
 
-**Step 2 — Rewrite titles** (SEO/content)
-
-| URL | Current length | Suggested rewrite (≤60 chars) |
+| URL | Chars | Suggested title (≤60) |
 |---|---|---|
 | `/facilities-mille-voix.php` | 83 | Mille-Voix High School Gym Design \| Alpha Fitness |
 | `/boutique-gym-design.php` | 79 | Boutique Gym Design Guide \| Alpha Fitness |
@@ -255,251 +537,226 @@ Only if no FR gear page is planned — still use **301**, never leave 404.
 | `/athletic-facility-design.php` | 76 | Athletic Training Facility Design \| Alpha Fitness |
 | `/about.php` | 65 | About Alpha Fitness \| Custom Gym Design Canada |
 | `/privacy.php` | 13 | Privacy Policy \| Alpha Fitness Canada |
+| `/facilities.php` | 71 | Commercial Gym Design & Equipment \| Alpha Fitness |
 
-**Step 3 — Implement in code**
-Update per-page `$pageTitle` or CMS field — do not hardcode in template only.
+### How to implement
+```php
+$pageTitle = 'Boutique Gym Design Guide | Alpha Fitness';
+```
+```html
+<title><?= htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') ?></title>
+```
 
-**Step 4 — French pages**
-55 French titles also exceed 60 characters — mirror the same process for `/fr/` URLs.
+Also fix **55 French titles** over 60 chars — same rules, native French copy.
 
-#### Verification checklist
-- [ ] Screaming Frog: ≤5% of titles over 60 characters (ideally 0%)
-- [ ] No duplicate titles remain
+### Verification
+- [ ] Screaming Frog: Page Titles > 60 chars ≈ 0
+- [ ] Spot-check with [Moz Title Tag Preview Tool](https://moz.com/learn/seo/title-tag)
 
 ---
 
-### SEO-006 — Meta descriptions over 155 characters (61 pages)
+## SEO-006 — Meta descriptions over 155 characters
 
-#### Rules
+| | |
+|---|---|
+| **Priority** | Medium (content task) |
+| **Senior review** | Descriptions read like on-page copy, not SERP snippets. Rewrite for click-through, not keyword stuffing. |
+
+### Rules
 - Target: **120–155 characters**
-- One unique description per page
-- Focus on **buyer benefit**, not boilerplate about Alpha Fitness
-- Include a soft CTA where natural ("Get a quote", "See the project")
+- Unique per page
+- Answer: “What does the visitor get from this page?”
+- Soft CTA where natural
 
-#### Solution steps
+### Examples
 
-**Step 1 — Rewrite worst offenders first** (see Section 5 of original audit).
+**`/commercial-gym-design.php` (was 220 chars):**
+> Plan a commercial gym layout members actually use. Zoning, sizing, and equipment tips for Canadian gym owners.
 
-Example rewrite for `/commercial-gym-design.php`:
-> Plan a commercial gym layout that members actually use. Equipment zoning, sizing, and design tips for Canadian gym owners.
+**`/residential-gym-ac.php` (was 53 chars — too short):**
+> Explore this space-efficient home gym build — strength and cardio zones designed for daily endurance training.
 
-**Step 2 — Fix too-short description**
-`/residential-gym-ac.php` (53 chars) — expand to 120–155 chars with project-specific detail.
-
-**Step 3 — Update in PHP/CMS** the same way as titles.
-
-#### Verification checklist
-- [ ] All descriptions between 120–155 characters
-- [ ] No duplicate meta descriptions
-
----
-
-### SEO-007 — Duplicate titles & meta descriptions
-
-#### Duplicate titles to fix
-
-| Duplicate title | URLs | Fix |
-|---|---|---|
-| Residential Gym - A Complete Training Environment | `residential-gym-ac.php`, `residential-gym-sf.php` | Use distinct titles: include project name/location (AC vs SF) |
-| Stay Updated on the Latest… | `news.php`, `news.php?tag=*` | Canonicalise tag URLs (SEO-008) + unique titles for tags if kept indexable |
-| Alpha Fitness - Creating Custom Gyms… | `about.php`, `fr/facilities-lionel-groulx.php`, `fr/facilities-extreme-evolution.php` | Write unique FR facility titles |
-
-#### Duplicate meta descriptions (7 facility pages)
-Pages sharing generic "Explore our professional gym solutions…" text:
-- `facilities-espacew.php`
-- `facilities-vita-sport.php`
-- `facilities-apte.php`
-- `facilities-erco.php`
-- `facilities-vi-mascouche.php`
-- `facilities-progym.php`
-- `facilities-privilege-gym.php`
-
-**Fix:** Write one unique description per facility referencing the actual client, space type, and outcome.
-
-**Note:** `facilities-espacew.php` currently has wrong facility name in description ("Vita Sport") — fix as part of this task.
-
-#### Verification checklist
-- [ ] Screaming Frog duplicate title report = 0
-- [ ] Screaming Frog duplicate meta description report = 0
-
----
-
-### SEO-008 — Canonicalise news tag URLs
-
-**Problem:** `news.php?tag=corporate-wellness`, `?tag=gym-equipment`, `?tag=gym-design` share the same title as `news.php`.
-
-#### Solution steps
-
-**Step 1 — Add canonical tag on tag views**
-In the news tag template, output:
-```html
-<link rel="canonical" href="https://myalphafitness.ca/news.php">
+### How to implement
+```php
+$metaDescription = 'Plan a commercial gym layout members actually use. Zoning, sizing, and equipment tips for Canadian gym owners.';
 ```
 
-**Step 2 — Optional: add `noindex` on filtered views**
-If tag pages are not meant to rank:
-```html
-<meta name="robots" content="noindex, follow">
-```
-
-**Step 3 — Keep internal links** to tags for UX — canonical handles SEO duplication.
-
-#### Verification checklist
-- [ ] Tag URLs canonical point to `/news.php`
-- [ ] Duplicate title issue cleared in crawl
+### Verification
+- [ ] Screaming Frog: Meta Description > 155 chars = 0
+- [ ] All descriptions ≥ 120 chars (except pages intentionally minimal like privacy)
 
 ---
 
-### SEO-009 — External links missing `rel="noopener"`
+## SEO-009 — External links missing `rel="noopener"`
 
-**Recheck:** Form links have `noopener noreferrer`; LinkedIn links in team section do not.
+| | |
+|---|---|
+| **Priority** | Low |
+| **Senior review** | Form links already fixed. Team LinkedIn links on `about.php` still use `target="_blank"` without `rel="noopener noreferrer"`. Fix once in template. |
 
-#### Solution steps
+### How to fix
 
-**Step 1 — Find all `target="_blank"` without noopener**
+**Find offenders:**
 ```bash
-grep -r 'target="_blank"' --include="*.php" . | grep -v noopener
+grep -rn 'target="_blank"' --include="*.php" . | grep -v noopener
 ```
 
-**Step 2 — Update template/helper for external links**
+**Fix pattern:**
 ```html
-<a href="..." target="_blank" rel="noopener noreferrer">
+<a href="https://www.linkedin.com/in/..." target="_blank" rel="noopener noreferrer" class="team-linkedin">
 ```
 
-Or fix the shared link renderer once.
+**Better — helper function:**
+```php
+function externalLink($url, $label, $class = '') {
+    return sprintf(
+        '<a href="%s" target="_blank" rel="noopener noreferrer" class="%s">%s</a>',
+        htmlspecialchars($url),
+        htmlspecialchars($class),
+        $label
+    );
+}
+```
 
-**Step 3 — Pay special attention to**
-- Team LinkedIn links on `about.php`
-- Footer social icons
-- Partner/external references
-
-#### Verification checklist
-- [ ] Screaming Frog "unsafe cross-origin links" = 0
+### Verification
+- [ ] Screaming Frog: Unsafe Cross-Origin Links = 0
 
 ---
 
-### SEO-010 — Hreflang missing return links (3 pages)
+## SEO-010 — Hreflang missing return links (3 pages)
 
-#### Solution steps
+| | |
+|---|---|
+| **Priority** | Low |
+| **Senior review** | Site-wide hreflang is strong (159/159 in audit). Three pages have incomplete sets. Fix in the shared SEO partial if possible. |
 
-**Step 1 — Identify the 3 URLs** from Screaming Frog hreflang report (missing return link / missing self-reference).
+### How to fix
 
-**Step 2 — On each EN page, include full set:**
+Every indexable page needs **all three** tags (including self-reference):
 ```html
-<link rel="alternate" hreflang="en-CA" href="https://myalphafitness.ca/page.php">
-<link rel="alternate" hreflang="fr-CA" href="https://myalphafitness.ca/fr/page.php">
-<link rel="alternate" hreflang="x-default" href="https://myalphafitness.ca/page.php">
+<link rel="alternate" hreflang="en-CA" href="https://myalphafitness.ca/PAGE.php">
+<link rel="alternate" hreflang="fr-CA" href="https://myalphafitness.ca/fr/PAGE-FR.php">
+<link rel="alternate" hreflang="x-default" href="https://myalphafitness.ca/PAGE.php">
 ```
 
-**Step 3 — Mirror the same on the FR page** pointing back to EN.
+Both EN and FR pages must reference each other.
 
-**Step 4 — Self-reference is required** — each page must include its own language in the hreflang set.
+**Step 1:** Run Screaming Frog → Hreflang report → export 3 broken URLs.
 
-#### Verification checklist
+**Step 2:** Add missing return links in SEO partial or page config array:
+```php
+$hreflang = [
+    'en-CA' => 'https://myalphafitness.ca/facilities-espacew.php',
+    'fr-CA' => 'https://myalphafitness.ca/fr/facilities-espacew.php',
+    'x-default' => 'https://myalphafitness.ca/facilities-espacew.php',
+];
+```
+
+### Verification
 - [ ] Screaming Frog hreflang errors = 0
-- [ ] [hreflang checker tool](https://technicalseo.com/tools/hreflang/) passes
+- [ ] [Hreflang checker](https://technicalseo.com/tools/hreflang/) passes for sample URLs
 
 ---
 
-### SEO-011 — Image optimization
+## SEO-011 — Image optimization
 
 | Issue | Count | Fix |
 |---|---|---|
-| Images >100KB | 70 | Compress to WebP, target <80KB for hero images |
-| Missing width/height | 7 | Add `width` and `height` on `<img>` to prevent CLS |
-| Alt text >100 chars | 1 | Shorten alt text |
+| Images >100KB | 70 | Compress to WebP, target <80KB for heroes |
+| Missing width/height | 7 | Add dimensions to prevent CLS |
+| Alt text >100 chars | 1 | Shorten |
 
-#### Solution steps
+### How to fix
 
-**Step 1 — Priority order**
-1. Homepage hero/images
-2. Top traffic facility pages
-3. Service page heroes
-4. Remaining images
+**Priority order:** Homepage → top facility pages → service heroes → rest.
 
-**Step 2 — Compress**
-- Export WebP at 70–80% quality (Squoosh, ImageOptim, or `cwebp`)
-- Replace source files; keep filenames or update references
-
-**Step 3 — Dimensions**
-```html
-<img src="..." alt="..." width="800" height="600" loading="lazy">
+**Compress:**
+```bash
+# Example using cwebp (install if needed)
+cwebp -q 80 input.jpg -o output.webp
 ```
 
-**Step 4 — Re-test**
-- Lighthouse / PageSpeed Insights on homepage + 2 facility pages
-- Screaming Frog image report
+**Add dimensions:**
+```html
+<img src="images/project.webp" alt="Espace W condo gym" width="1200" height="800" loading="lazy">
+```
 
-#### Verification checklist
-- [ ] ≤10% of images over 100KB (stretch goal)
-- [ ] 0 images missing dimensions
-- [ ] CLS score stable in Search Console
+### Do NOT
+- Upscale small images
+- Strip alt text to save space
+- Lazy-load above-the-fold hero without testing LCP
+
+### Verification
+- [ ] Screaming Frog: images over 100KB reduced (target ≤10% of total)
+- [ ] Lighthouse CLS stable on homepage + 2 facility pages
 
 ---
 
-### SEO-012 — URL structure (informational)
+## SEO-012 — URL structure (informational)
 
-| Issue | Action |
+| Issue | Senior decision |
 |---|---|
-| 7 URLs with underscores | **Do not change existing URLs** — requires 301 migration. Use hyphens on **new** pages only. |
-| 29 URLs with parameters | Canonicalise (see SEO-008) |
-| 4 URLs over 115 chars | Shorten only on new pages |
+| 7 URLs with underscores | **Do not rename live URLs** — needs 301 migration. Use hyphens on new pages only. |
+| Parameter URLs (`news.php?tag=`) | Fix with canonical (SEO-008) |
+| Underscore URLs returning 404 | Audit if internally linked; add 301 to correct destination |
 
 ---
 
-## Week-by-week execution plan
+# Week-by-week plan
 
-### Week 1 — Quick wins (Developer-heavy)
+### Week 1 — Developer quick wins (~4 hours)
 
-| Task | ID | Time |
+| Task | ID | Owner |
 |---|---|---|
-| Remove meta keywords from template | SEO-002 | 1 hr |
-| Fix or redirect `fr/gear.php` | SEO-004 | 30 min |
-| Canonicalise news tag pages | SEO-008 | 30 min |
-| Fix duplicate residential gym titles | SEO-007 | 15 min |
-| Fix `privacy.php` title | SEO-005 | 5 min |
+| Fix FR gear nav + 301 redirect | SEO-004 | Developer |
+| Remove meta keywords from template | SEO-002 | Developer |
+| Fix news tag canonical logic | SEO-008 | Developer |
+| Fix duplicate residential gym titles | SEO-007 | Developer + SEO |
+| Fix `privacy.php` title | SEO-005 | SEO |
 
 ### Week 2–3 — High impact
 
-| Task | ID | Time |
+| Task | ID | Owner |
 |---|---|---|
-| Complete schema rollout + validation | SEO-001 | 6–8 hrs |
-| Rewrite top 15 EN titles | SEO-005 | 3–4 hrs |
-| Rewrite top 10 EN meta descriptions | SEO-006 | 2–3 hrs |
-| Unique descriptions for 7 facility pages | SEO-007 | 2 hrs |
-| Fix duplicate H1s across templates | SEO-003 | 1 day |
+| Complete schema rollout + FAQ dedupe | SEO-001 | Developer |
+| Rewrite top 15 EN titles | SEO-005 | SEO |
+| Rewrite top 10 EN meta descriptions | SEO-006 | SEO |
+| Unique facility meta descriptions (7 pages) | SEO-007 | SEO |
+| Fix duplicate H1s | SEO-003 | Dev + SEO |
 
 ### Week 4+ — Maintenance
 
-| Task | ID | Time |
+| Task | ID | Owner |
 |---|---|---|
-| noopener on external links | SEO-009 | 1 hr |
-| hreflang cleanup | SEO-010 | 30 min |
-| Image compression pass | SEO-011 | 4–6 hrs |
-| French title/description pass | SEO-005/006 | 1 day |
+| noopener on external links | SEO-009 | Developer |
+| hreflang cleanup | SEO-010 | Developer |
+| Image compression | SEO-011 | Developer |
+| French title/description pass | SEO-005/006 | French SEO |
 
 ---
 
-## Sign-off template (per task)
+# Sign-off template
 
 | Field | Value |
 |---|---|
 | Task ID | SEO-___ |
-| Completed by | |
-| Date | |
-| PR / commit | |
-| Verified by | |
-| Screaming Frog re-crawl date | |
+| Developer | |
+| SEO reviewer | |
+| Date completed | |
+| Commit / PR | |
+| Verification tool | |
+| Pass / Fail | |
+| Senior approval | |
 
 ---
 
-## References
+# References
 
-- Original audit: September 4, 2026 (Screaming Frog full crawl, 449 URLs)
-- [Google Search Central — Structured data](https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data)
+- Original audit: September 4, 2026 (Screaming Frog, 449 URLs crawled)
+- [Google Structured Data Guidelines](https://developers.google.com/search/docs/appearance/structured-data/intro-structured-data)
 - [Google Rich Results Test](https://search.google.com/test/rich-results)
 - [Hreflang documentation](https://developers.google.com/search/docs/specialty/international/localized-versions)
 
 ---
 
-*Document prepared for internal use — Alpha Fitness / myalphafitness.ca*
+*Senior-reviewed remediation guide — Alpha Fitness / myalphafitness.ca — Internal use only*
